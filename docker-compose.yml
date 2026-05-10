@@ -1,0 +1,89 @@
+services:
+  broker:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    ports:
+      - "${BROKER_PORT:-8000}:8000"
+    environment:
+      - PORT=8000
+      - REDELIVERY_TIMEOUT_MS=${REDELIVERY_TIMEOUT_MS:-3000}
+    command: python broker/main.py
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/status')"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  orchestrator:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    ports:
+      - "${ORCHESTRATOR_PORT:-8001}:8001"
+    environment:
+      - PORT=8001
+      - BROKER_URL=http://broker:8000
+    command: python orchestrator/main.py
+    depends_on:
+      broker:
+        condition: service_healthy
+
+  warehouse:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    ports:
+      - "${WAREHOUSE_PORT:-8002}:8002"
+    environment:
+      - PORT=8002
+      - BROKER_URL=http://broker:8000
+      - INITIAL_INVENTORY=${INITIAL_INVENTORY:-item1:100,item2:50}
+    command: python services/warehouse/main.py
+    depends_on:
+      broker:
+        condition: service_healthy
+
+  payment:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    ports:
+      - "${PAYMENT_PORT:-8003}:8003"
+    environment:
+      - PORT=8003
+      - BROKER_URL=http://broker:8000
+      - INITIAL_BALANCE=${INITIAL_BALANCE:-10000}
+    command: python services/payment/main.py
+    depends_on:
+      broker:
+        condition: service_healthy
+
+  delivery:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    ports:
+      - "${DELIVERY_PORT:-8004}:8004"
+    environment:
+      - PORT=8004
+      - BROKER_URL=http://broker:8000
+      - FAIL_ACTION=${FAIL_ACTION:-}
+    command: python services/delivery/main.py
+    depends_on:
+      broker:
+        condition: service_healthy
+
+  delivery-fail:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    ports:
+      - "${DELIVERY_FAIL_PORT:-8005}:8004"
+    environment:
+      - PORT=8004
+      - BROKER_URL=http://broker:8000
+      - FAIL_ACTION=schedule
+    command: python services/delivery/main.py
+    profiles:
+      - fail
